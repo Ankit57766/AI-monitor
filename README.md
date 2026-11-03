@@ -130,6 +130,18 @@ python nice_queue_monitor_ocr.py "<nice-url>" --notifications outlook --tesserac
 
 Use `--notifications disabled` to turn delivery off. Do not commit webhook URLs or passwords. Confirm the Teams webhook and SMTP route with your company security/messaging administrators before enabling delivery.
 
+### Screenshot alerts
+
+The OCR monitor now triggers a breach only when `wait_seconds > 120`, after the configured consecutive-reading confirmation, and includes a compressed `screenshotBase64` and `screenshotFileName` in the webhook request. The existing Teams Workflow must be extended to:
+
+1. Read `screenshotBase64` from the webhook body.
+2. Convert it with `base64ToBinary(triggerBody()?['screenshotBase64'])`.
+3. Create a JPG file in approved OneDrive/SharePoint storage.
+4. Create an approved sharing link for that file.
+5. Add the sharing-link URL as an `Image` in the Adaptive Card posted to Teams.
+
+The monitor cannot attach a local browser file directly to Teams. Do not enable screenshot posting until storage, sharing permissions, and privacy approval are in place.
+
 ## Deliberate scope boundary
 
 Queue matching, dynamic timer association, threshold rules, alerting, localStorage, Teams, email, and monitoring loops are not included yet. They should be added only after this OCR output is validated against the real NICE dashboard.

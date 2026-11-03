@@ -130,7 +130,7 @@ def main() -> None:
                     queue, wait_text, seconds = readings.get(queue_id, (None, None, None))
                     if seconds is None:
                         state["state"] = "DOM_ERROR"
-                    elif seconds >= CONFIG["threshold_seconds"]:
+                    elif seconds > CONFIG["threshold_seconds"]:
                         state["breaches"] += 1
                         if state["breaches"] >= CONFIG["required_breaches"] and not state["alerted"]:
                             state["state"], state["alerted"] = "ALERTED", True

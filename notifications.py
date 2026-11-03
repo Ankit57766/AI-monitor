@@ -40,6 +40,8 @@ class NotificationEvent:
     wait_text: str
     wait_seconds: int
     threshold_seconds: int
+    screenshot_base64: str | None = None
+    screenshot_file_name: str | None = None
 
 
 class Notifier:
@@ -73,13 +75,35 @@ class Notifier:
         if not webhook:
             raise RuntimeError(f"NICE_TEAMS_{channel.upper().replace('-', '_')}_WEBHOOK_URL is not configured")
         mention_id = _secret("NICE_SERVICE_COORDINATOR_MENTION_ID") if event.queue_id == "service-coordinators-calls" else None
-        mention_name = _secret("NICE_SERVICE_COORDINATOR_MENTION_NAME") or "Service Coordinator"
-        mention_text = f"<at>{mention_name}</at> " if mention_id else ("@Service Coordinator " if event.queue_id == "service-coordinators-calls" else "")
-        message = f"{mention_text}NICE Queue {event.event}\n{event.queue}\nLongest wait: {event.wait_text}\nThreshold: {event.threshold_seconds // 60:02d}:00"
-        if mention_id:
-            payload = {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard", "version": "1.2", "body": [{"type": "TextBlock", "text": message, "wrap": True}], "msteams": {"entities": [{"type": "mention", "text": f"<at>{mention_name}</at>", "mentioned": {"id": mention_id, "name": mention_name}}]}}}]}
+        mention_name = _secret("NICE_SERVICE_COORDINATOR_MENTION_NAME") or "Service Coordinators"
+        mention_text = f"<at>{mention_name}</at>" if mention_id else ("@Service Coordinators" if event.queue_id == "service-coordinators-calls" else "")
+        if event.queue_id == "service-coordinators-calls":
+            message = f"Hi {mention_text}, There are few calls waiting in the queue. Thanks!\\nLongest wait: {event.wait_text}"
         else:
-            payload = {"text": message}
+            message = f"NICE Queue {event.event}\\n{event.queue}\\nLongest wait: {event.wait_text}\\nThreshold: {event.threshold_seconds // 60:02d}:00"
+        card = {
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "type": "AdaptiveCard",
+            "version": "1.2",
+            "body": [{"type": "TextBlock", "text": message, "wrap": True}],
+        }
+        if mention_id:
+            card["msteams"] = {"entities": [{"type": "mention", "text": f"<at>{mention_name}</at>", "mentioned": {"id": mention_id, "name": mention_name}}]}
+        # The Teams Workflow template reads triggerBody()['attachments'] and
+        # passes the attachment content to its Post-card action.
+        payload = {
+            "event": event.event,
+            "queueId": event.queue_id,
+            "queue": event.queue,
+            "queueType": event.queue_type,
+            "wait": event.wait_text,
+            "waitSeconds": event.wait_seconds,
+            "thresholdSeconds": event.threshold_seconds,
+            "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
+        }
+        if event.screenshot_base64:
+            payload["screenshotBase64"] = event.screenshot_base64
+            payload["screenshotFileName"] = event.screenshot_file_name or "nice-queue-alert.jpg"
         request = Request(webhook, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
         with urlopen(request, timeout=15) as response:
             if response.status >= 300:

@@ -7,6 +7,7 @@ the screenshot; Playwright is not used as an OCR substitute.
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import time
 from datetime import datetime, timezone
@@ -65,6 +66,20 @@ def ocr_screenshot(image: Image.Image, scale: float = 3.0, psm: int = 11) -> lis
             continue
         words.append(Item(text, float(data["left"][index]), float(data["top"][index]), float(data["width"][index]), float(data["height"][index])))
     return words
+
+
+def screenshot_payload(image: Image.Image) -> str:
+    """Create a compact JPEG payload for the approved Power Automate workflow."""
+    for dimensions, quality in [((1000, 600), 30), ((800, 480), 25), ((600, 360), 22), ((400, 240), 20)]:
+        candidate = image.copy()
+        candidate.thumbnail(dimensions, Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        candidate.save(output, format="JPEG", quality=quality, optimize=True)
+        encoded = base64.b64encode(output.getvalue()).decode("ascii")
+        # Keep the webhook body well below Teams/Workflow request limits.
+        if len(encoded) <= 18000:
+            return encoded
+    return encoded
 
 
 def combine_lines(words: list[Item]) -> list[Item]:
@@ -128,6 +143,7 @@ def main() -> None:
         try:
             while True:
                 image = Image.open(io.BytesIO(page.screenshot())).convert("RGB")
+                screenshot_base64 = screenshot_payload(image.copy())
                 words = ocr_screenshot(image, scale=args.ocr_scale, psm=args.ocr_psm)
                 items = combine_lines(words)
                 if args.debug_ocr:
@@ -145,13 +161,13 @@ def main() -> None:
                     seconds = timer[1] if timer else None
                     if seconds is None:
                         state["state"] = "OCR_ERROR"; state["breaches"] = 0
-                    elif seconds >= CONFIG["threshold_seconds"]:
+                    elif seconds > CONFIG["threshold_seconds"]:
                         state["breaches"] += 1
                         if state["breaches"] >= CONFIG["required_breaches"] and not state["alerted"]:
                             state["state"], state["alerted"] = "ALERTED", True
                             print(f"ALERT: {queue_name} longest wait {timer[0].text}")
                             try:
-                                notifier.send(NotificationEvent("ALERT", queue_id, queue_name, _queue_type, timer[0].text, seconds, CONFIG["threshold_seconds"]))
+                                notifier.send(NotificationEvent("ALERT", queue_id, queue_name, _queue_type, timer[0].text, seconds, CONFIG["threshold_seconds"], screenshot_base64, "nice-queue-alert.jpg"))
                             except Exception as error:
                                 print(f"Notification failed: {error}")
                         elif not state["alerted"]:
@@ -161,7 +177,7 @@ def main() -> None:
                         state.update(breaches=0, alerted=False, state="NORMAL")
                         if was_alerted:
                             try:
-                                notifier.send(NotificationEvent("RECOVERY", queue_id, queue_name, _queue_type, timer[0].text, seconds, CONFIG["threshold_seconds"]))
+                                notifier.send(NotificationEvent("RECOVERY", queue_id, queue_name, _queue_type, timer[0].text, seconds, CONFIG["threshold_seconds"], screenshot_base64, "nice-queue-recovery.jpg"))
                             except Exception as error:
                                 print(f"Recovery notification failed: {error}")
                     print(f"{queue_name:<32} {(timer[0].text if timer else 'MISSING'):<12} {state['state']}")

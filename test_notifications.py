@@ -18,5 +18,9 @@ parser.add_argument("--queue-id", choices=tuple(QUEUES), default="eec-calls")
 args = parser.parse_args()
 
 queue_name, queue_type = QUEUES[args.queue_id]
-Notifier(args.destination).send(NotificationEvent("TEST", args.queue_id, queue_name, queue_type, "00:02:00", 120, 120))
-print(f"Test notification sent for {queue_name} via {args.destination}.")
+try:
+    Notifier(args.destination).send(NotificationEvent("TEST", args.queue_id, queue_name, queue_type, "00:02:00", 120, 120))
+    print(f"Test notification sent for {queue_name} via {args.destination}.")
+except Exception as error:
+    print(f"TEST_NOTIFICATION_FAILED: {error}")
+    raise SystemExit(1)
